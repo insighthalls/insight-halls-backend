@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Insight Halls Engineering</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --primary-color: #1a4d7a;
+            --secondary-color: #ff6b35;
+            --accent-color: #f7931e;
+            --light-bg: #f5f5f5;
+            --text-dark: #2c3e50;
+            --text-light: #ecf0f1;
+            --border-color: #e0e0e0;
+            --shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.15);
+            --green: #4caf50;
+            --red: #f44336;
+            --blue: #2196F3;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--light-bg); color: var(--text-dark); }
+        .admin-container { display: grid; grid-template-columns: 250px 1fr; min-height: 100vh; }
+
+        .sidebar {
+            background: var(--primary-color);
+            color: var(--text-light);
+            padding: 2rem 0;
+            position: fixed;
+            left: 0; top: 0;
+            width: 250px;
+            height: 100vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow);
+        }
+
+        .sidebar-logo { padding: 1.5rem; border-bottom: 2px solid rgba(255, 255, 255, 0.1); margin-bottom: 2rem; display: flex; align-items: center; gap: 1rem; }
+        .sidebar-logo h2 { font-size: 1.2rem; font-weight: 700; }
+
+        .sidebar-menu { list-style: none; }
+        .sidebar-menu a {
+            display: block;
+            padding: 1rem 1.5rem;
+            color: var(--text-light);
+            text-decoration: none;
+            transition: all 0.3s;
+            border-left: 4px solid transparent;
+        }
+        .sidebar-menu a:hover, .sidebar-menu a.active {
+            background: rgba(255, 255, 255, 0.1);
+            border-left-color: var(--secondary-color);
+            color: var(--accent-color);
+        }
+
+        .logout-btn {
+            position: absolute;
+            bottom: 2rem;
+            left: 1.5rem;
+            right: 1.5rem;
+            padding: 0.75rem;
+            background: var(--secondary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+        .logout-btn:hover { background: #ff5722; }
+
+        .main-content { margin-left: 250px; padding: 2rem; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+        }
+        .header h1 { color: var(--primary-color); font-size: 2rem; }
+        .header-right { display: flex; align-items: center; gap: 1rem; }
+        .user-info { text-align: right; }
+        .user-info p { font-size: 0.9rem; color: #999; }
+
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin-bottom: 2rem; }
+
+        .dashboard-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+            border-left: 4px solid var(--secondary-color);
+        }
+        .dashboard-card h3 { color: #999; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
+        .dashboard-card .number { font-size: 2.5rem; font-weight: bold; color: var(--primary-color); margin-bottom: 0.5rem; }
+        .dashboard-card .change { font-size: 0.85rem; color: var(--green); }
+        .dashboard-card.warning { border-left-color: var(--accent-color); }
+        .dashboard-card.warning .number { color: var(--accent-color); }
+        .dashboard-card.success { border-left-color: var(--green); }
+        .dashboard-card.success .number { color: var(--green); }
+
+        .table-container {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+            overflow-x: auto;
+            margin-bottom: 2rem;
+        }
+        .table-container h2 { color: var(--primary-color); margin-bottom: 1.5rem; font-size: 1.5rem; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { background: var(--light-bg); padding: 1rem; text-align: left; font-weight: 600; color: var(--text-dark); border-bottom: 2px solid var(--border-color); }
+        td { padding: 1rem; border-bottom: 1px solid var(--border-color); }
+        tr:hover { background: rgba(255, 107, 53, 0.05); }
+
+        .status-badge { display: inline-block; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+        .status-new { background: #e3f2fd; color: #1976d2; }
+        .status-pending, .status-in.progress { background: #fff3e0; color: #f57c00; }
+        .status-completed, .status-responded { background: #e8f5e9; color: #388e3c; }
+        .status-in-progress { background: #f3e5f5; color: #7b1fa2; }
+
+        .action-button {
+            padding: 0.5rem 1rem;
+            margin-right: 0.5rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-view { background: var(--blue); color: white; }
+        .btn-view:hover { background: #1976d2; }
+        .btn-approve { background: var(--green); color: white; }
+        .btn-approve:hover { background: #43a047; }
+        .btn-reject { background: var(--red); color: white; }
+        .btn-reject:hover { background: #e53935; }
+
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--primary-color); }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 1rem;
+            font-family: inherit;
+        }
+        .form-group textarea { resize: vertical; min-height: 100px; }
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: var(--secondary-color); }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.show { display: flex; }
+
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 2px solid var(--border-color); padding-bottom: 1rem; }
+        .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--primary-color); }
+
+        .success-message { background: #e8f5e9; color: #2e7d32; padding: 1rem; border-radius: 5px; margin-bottom: 1.5rem; display: none; }
+        .success-message.show { display: block; }
+
+        .empty-state { text-align: center; padding: 2rem; color: #999; }
+        .loading { text-align: center; padding: 2rem; color: #999; }
+
+        @media (max-width: 768px) {
+            .admin-container { grid-template-columns: 1fr; }
+            .sidebar { width: 100%; height: auto; position: relative; }
+            .main-content { margin-left: 0; padding: 1rem; }
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .header { flex-direction: column; text-align: center; }
+            .header-right { flex-direction: column; width: 100%; margin-top: 1rem; }
+            table { font-size: 0.9rem; }
+            th, td { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <div style="font-size: 1.5rem;">🏗️</div>
+                <h2>IH Admin</h2>
+            </div>
+
+            <ul class="sidebar-menu">
+                <li><a href="#dashboard" class="nav-link active">📊 Dashboard</a></li>
+                <li><a href="#inquiries" class="nav-link">💬 Inquiries</a></li>
+                <li><a href="#projects" class="nav-link">📁 Projects</a></li>
+                <li><a href="#partners" class="nav-link">👥 Partners</a></li>
+                <li><a href="#funding" class="nav-link">💰 Funding</a></li>
+                <li><a href="#reports" class="nav-link">📈 Reports</a></li>
+                <li><a href="#settings" class="nav-link">⚙️ Settings</a></li>
+            </ul>
+
+            <button class="logout-btn" onclick="logout()">🚪 Logout</button>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <div><h1 id="pageTitle">Dashboard</h1></div>
+                <div class="header-right">
+                    <div class="user-info">
+                        <p id="adminEmail">—</p>
+                        <p style="font-size: 0.8rem; color: #999;">Administrator</p>
+                    </div>
+                </div>
+            </div>
+
+            <section id="dashboard" class="section">
+                <div class="dashboard-grid">
+                    <div class="dashboard-card">
+                        <h3>Total Inquiries</h3>
+                        <div class="number" id="totalInquiries">—</div>
+                        <div class="change" id="newInquiries">Loading…</div>
+                    </div>
+
+                    <div class="dashboard-card warning">
+                        <h3>Pending Responses</h3>
+                        <div class="number" id="pendingInquiries">—</div>
+                        <div class="change">Awaiting reply</div>
+                    </div>
+
+                    <div class="dashboard-card success">
+                        <h3>Active Projects</h3>
+                        <div class="number" id="activeProjects">—</div>
+                        <div class="change">In progress</div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h3>Total Partners</h3>
+                        <div class="number" id="totalPartners">—</div>
+                        <div class="change">Active</div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <h2>Recent Inquiries</h2>
+                    <div id="inquiriesContainer">
+                        <div class="loading">Loading inquiries…</div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <h2>Active Projects</h2>
+                    <div id="projectsContainer">
+                        <div class="loading">Loading projects…</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- View / respond inquiry modal -->
+    <div id="inquiryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Inquiry Details</h2>
+                <button class="modal-close" onclick="closeModal('inquiryModal')">&times;</button>
+            </div>
+            <div class="success-message" id="successMessage">✅ Action completed successfully!</div>
+            <div class="form-group"><label>Sender Name</label><input type="text" id="inquirySender" readonly style="background: var(--light-bg);"></div>
+            <div class="form-group"><label>Email</label><input type="email" id="inquiryEmail" readonly style="background: var(--light-bg);"></div>
+            <div class="form-group"><label>Phone</label><input type="tel" id="inquiryPhone" readonly style="background: var(--light-bg);"></div>
+            <div class="form-group"><label>Service</label><input type="text" id="inquiryService" readonly style="background: var(--light-bg);"></div>
+            <div class="form-group"><label>Message</label><textarea id="inquiryMessage" readonly style="background: var(--light-bg);"></textarea></div>
+            <div class="form-group"><label>Your Response</label><textarea id="responseMessage" placeholder="Type your response..."></textarea></div>
+            <input type="hidden" id="currentInquiryId">
+            <div style="display: flex; gap: 1rem;">
+                <button class="action-button btn-approve" onclick="sendResponse()" style="flex: 1; padding: 0.75rem;">Mark Responded</button>
+                <button class="action-button btn-reject" onclick="closeModal('inquiryModal')" style="flex: 1; padding: 0.75rem;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api';
+
+        // ====================================================================
+        // AUTH CHECK
+        // ====================================================================
+        function getAuth() {
+            const token = localStorage.getItem('token');
+            const user = localStorage.getItem('user');
+            if (!token || !user) return null;
+            try {
+                return { token, user: JSON.parse(user) };
+            } catch (e) { return null; }
+        }
+
+        let AUTH = null;
+        let CACHED_INQUIRIES = [];
+
+        window.addEventListener('load', async () => {
+            AUTH = getAuth();
+            if (!AUTH) {
+                alert('❌ Please log in.');
+                window.location.href = 'index.html';
+                return;
+            }
+            if (AUTH.user.role !== 'Administrator') {
+                alert('❌ Administrator access only.');
+                window.location.href = 'partner_dashboard.html';
+                return;
+            }
+            document.getElementById('adminEmail').textContent = AUTH.user.email;
+            await loadInquiries();
+            await loadProjects();
+            await loadPartners();
+        });
+
+        // ====================================================================
+        // DATA LOADERS
+        // ====================================================================
+        async function apiGet(path) {
+            const res = await fetch(`${API_URL}${path}`, {
+                headers: { 'Authorization': `Bearer ${AUTH.token}` }
+            });
+            return res.json();
+        }
+
+        async function loadInquiries() {
+            try {
+                const data = await apiGet('/inquiries');
+                if (!data.success) throw new Error(data.message);
+                const inquiries = data.data || [];
+                CACHED_INQUIRIES = inquiries;
+
+                document.getElementById('totalInquiries').textContent = inquiries.length;
+                const newCount = inquiries.filter(i => i.status === 'New').length;
+                document.getElementById('newInquiries').textContent = `${newCount} new`;
+                const pending = inquiries.filter(i => i.status === 'New' || i.status === 'In Progress').length;
+                document.getElementById('pendingInquiries').textContent = pending;
+
+                renderInquiries(inquiries);
+            } catch (err) {
+                console.error('Inquiries error:', err);
+                document.getElementById('inquiriesContainer').innerHTML = `<div class="empty-state">Could not load inquiries: ${err.message}</div>`;
+            }
+        }
+
+        async function loadProjects() {
+            try {
+                const data = await apiGet('/projects');
+                if (!data.success) throw new Error(data.message);
+                const projects = data.data || [];
+                document.getElementById('activeProjects').textContent = projects.filter(p => p.status === 'In Progress' || p.status === 'Active').length;
+                renderProjects(projects);
+            } catch (err) {
+                console.error('Projects error:', err);
+                document.getElementById('projectsContainer').innerHTML = `<div class="empty-state">Could not load projects: ${err.message}</div>`;
+            }
+        }
+
+        async function loadPartners() {
+            try {
+                const data = await apiGet('/partners');
+                if (data.success) {
+                    document.getElementById('totalPartners').textContent = (data.data || []).length;
+                }
+            } catch (err) { console.error('Partners error:', err); }
+        }
+
+        // ====================================================================
+        // RENDERERS
+        // ====================================================================
+        function renderInquiries(inquiries) {
+            const container = document.getElementById('inquiriesContainer');
+            if (inquiries.length === 0) {
+                container.innerHTML = '<div class="empty-state">No inquiries yet.</div>';
+                return;
+            }
+            const recent = inquiries.slice(0, 10);
+            let html = `<table><thead><tr><th>Sender</th><th>Service</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
+            recent.forEach(i => {
+                const date = i.created_at ? new Date(i.created_at).toLocaleDateString() : '—';
+                const statusClass = `status-${(i.status || 'New').toLowerCase().replace(/\s+/g, '-')}`;
+                html += `<tr>
+                    <td>${escapeHtml(i.sender_name || '—')}</td>
+                    <td>${escapeHtml(i.inquiry_type || i.sector || '—')}</td>
+                    <td>${date}</td>
+                    <td><span class="status-badge ${statusClass}">${escapeHtml(i.status || 'New')}</span></td>
+                    <td>
+                        <button class="action-button btn-view" onclick="viewInquiry('${i.id}')">View</button>
+                    </td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        function renderProjects(projects) {
+            const container = document.getElementById('projectsContainer');
+            if (projects.length === 0) {
+                container.innerHTML = '<div class="empty-state">No projects yet.</div>';
+                return;
+            }
+            let html = `<table><thead><tr><th>Project Name</th><th>Client</th><th>Status</th><th>Budget</th></tr></thead><tbody>`;
+            projects.forEach(p => {
+                const statusClass = `status-${(p.status || 'Planning').toLowerCase().replace(/\s+/g, '-')}`;
+                html += `<tr>
+                    <td>${escapeHtml(p.name || '—')}</td>
+                    <td>${escapeHtml(p.client_name || '—')}</td>
+                    <td><span class="status-badge ${statusClass}">${escapeHtml(p.status || 'Planning')}</span></td>
+                    <td>MWK ${(p.budget || 0).toLocaleString()}</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        }
+
+        // ====================================================================
+        // INQUIRY ACTIONS
+        // ====================================================================
+        function viewInquiry(id) {
+            const inquiry = CACHED_INQUIRIES.find(i => String(i.id) === String(id));
+            if (!inquiry) return;
+            document.getElementById('currentInquiryId').value = inquiry.id;
+            document.getElementById('inquirySender').value = inquiry.sender_name || '';
+            document.getElementById('inquiryEmail').value = inquiry.sender_email || '';
+            document.getElementById('inquiryPhone').value = inquiry.sender_phone || '';
+            document.getElementById('inquiryService').value = inquiry.inquiry_type || inquiry.sector || '';
+            document.getElementById('inquiryMessage').value = inquiry.message || '';
+            document.getElementById('responseMessage').value = inquiry.response || '';
+            openModal('inquiryModal');
+        }
+
+        async function sendResponse() {
+            const id = document.getElementById('currentInquiryId').value;
+            const response = document.getElementById('responseMessage').value.trim();
+            if (!response) { alert('Please type a response.'); return; }
+            try {
+                const res = await fetch(`${API_URL}/inquiries/${id}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${AUTH.token}`
+                    },
+                    body: JSON.stringify({ status: 'Responded', response })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                document.getElementById('successMessage').classList.add('show');
+                await loadInquiries();
+                setTimeout(() => {
+                    document.getElementById('successMessage').classList.remove('show');
+                    closeModal('inquiryModal');
+                }, 1500);
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // ====================================================================
+        // NAV / MODALS / LOGOUT
+        // ====================================================================
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                this.classList.add('active');
+                const section = this.getAttribute('href').substring(1);
+                const titleMap = {
+                    dashboard: 'Dashboard', inquiries: 'Inquiries Management', projects: 'Projects Management',
+                    partners: 'Partners Management', funding: 'Funding Tracking', reports: 'Reports', settings: 'Settings'
+                };
+                document.getElementById('pageTitle').textContent = titleMap[section] || section;
+            });
+        });
+
+        function openModal(id) { document.getElementById(id).classList.add('show'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+        function logout() {
+            if (confirm('Log out?')) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = 'index.html';
+            }
+        }
+
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) this.classList.remove('show');
+            });
+        });
+    </script>
+</body>
+</html>
