@@ -891,11 +891,109 @@
 
                 <!-- ====== FINANCIALS TAB ====== -->
                 <section class="tab-pane" data-tab-pane="financials">
-                    <div class="module-notice">
-                        <div class="module-notice-icon">🚧</div>
-                        <div>
-                            <h4>Financial module is in Phase 4</h4>
-                            <p>Live profit calculations and distribution tracking will appear here once the expenses, invoices, and project_financials tables are added to Supabase. The 3-pool engine below is the design preview.</p>
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <h2>Financial Workspace</h2>
+                                <p>Pick a project to see revenue, costs, profit, and distributions.</p>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <select id="finProjectPicker" style="padding: 0.55rem 0.85rem; border: 1.5px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 0.9rem; min-width: 240px;" onchange="onFinProjectChange()">
+                                    <option value="">Select a project…</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="finWorkspace" style="display: none;">
+                        <div class="metrics">
+                            <div class="metric-card success">
+                                <div class="metric-label">Revenue</div>
+                                <div class="metric-value" id="finRevenue" style="font-size: 1.5rem;">MWK 0</div>
+                                <div class="metric-trend">From payments received</div>
+                            </div>
+                            <div class="metric-card warn">
+                                <div class="metric-label">Costs</div>
+                                <div class="metric-value" id="finCosts" style="font-size: 1.5rem;">MWK 0</div>
+                                <div class="metric-trend">Approved expenses</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-label">Gross Profit</div>
+                                <div class="metric-value" id="finProfit" style="font-size: 1.5rem;">MWK 0</div>
+                                <div class="metric-trend" id="finProfitTrend">Revenue − Costs</div>
+                            </div>
+                            <div class="metric-card gold">
+                                <div class="metric-label">Distributable Pool</div>
+                                <div class="metric-value" id="finPool" style="font-size: 1.5rem;">MWK 0</div>
+                                <div class="metric-trend">60% of gross profit</div>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <h2>Calculation Engine</h2>
+                                    <p>Run these in order. Re-runnable any time.</p>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                    <button class="btn btn-primary btn-sm" onclick="calcProfit()">⚡ Calculate Profit</button>
+                                    <button class="btn btn-success btn-sm" onclick="calcShares()">🧮 Calculate Shares</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="distributePool()">💸 Materialize Distributions</button>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <p style="color: var(--text-muted); font-size: 0.85rem;" id="finCalcStatus">No calculation yet. Click "Calculate Profit" to refresh financials from current expenses + payments.</p>
+                            </div>
+                        </div>
+
+                        <div class="col-2">
+                            <div class="panel">
+                                <div class="panel-header">
+                                    <div><h2>Expenses</h2></div>
+                                    <button class="btn btn-primary btn-sm" onclick="openExpenseModal()">➕ Add Expense</button>
+                                </div>
+                                <div class="panel-body tight">
+                                    <div class="table-wrap">
+                                        <div id="finExpenses"><div class="state"><div class="state-icon">⏳</div><p>Loading…</p></div></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="panel">
+                                <div class="panel-header">
+                                    <div><h2>Invoices</h2></div>
+                                    <button class="btn btn-primary btn-sm" onclick="openInvoiceModal()">➕ Create Invoice</button>
+                                </div>
+                                <div class="panel-body tight">
+                                    <div class="table-wrap">
+                                        <div id="finInvoices"><div class="state"><div class="state-icon">⏳</div><p>Loading…</p></div></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div class="panel-header">
+                                <h2>Partner Profit Shares (3-Pool Calculation)</h2>
+                                <p style="color: var(--text-muted); font-size: 0.85rem;">Run "Calculate Shares" after recording expenses + payments to populate.</p>
+                            </div>
+                            <div class="panel-body tight">
+                                <div class="table-wrap">
+                                    <div id="finShares"><div class="state"><div class="state-icon">🧮</div><h3>No shares calculated yet</h3><p>Click "Calculate Shares" above.</p></div></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div class="panel-header">
+                                <h2>Distribution Payouts</h2>
+                                <p style="color: var(--text-muted); font-size: 0.85rem;">Mark each partner's distribution as paid once the transfer goes out.</p>
+                            </div>
+                            <div class="panel-body tight">
+                                <div class="table-wrap">
+                                    <div id="finDistributions"><div class="state"><div class="state-icon">💸</div><h3>No distributions yet</h3><p>Materialize after calculating shares.</p></div></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -925,7 +1023,7 @@
                                 </div>
                             </div>
                             <p style="color: var(--text-muted); font-size: 0.9rem;">
-                                Reserve fund holds <strong>40%</strong> of gross profit before distribution. The remaining <strong>60%</strong> gets split via the three indices above. Final partner share = (Fund% + Effort% + Deal%) × Distributable Profit, less 10% tax withholding.
+                                Reserve fund holds <strong>40%</strong> of gross profit before distribution. The remaining <strong>60%</strong> gets split via the three indices above. Final partner share = (Fund% × 60% + Effort% × 20% + Deal% × 20%) × Distributable Profit, less 10% tax withholding.
                             </p>
                         </div>
                     </div>
@@ -1154,6 +1252,133 @@
             <div class="modal-foot">
                 <button class="btn btn-secondary" onclick="closeModal('projectModal')">Cancel</button>
                 <button class="btn btn-primary" onclick="createProject()">Create Project</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== ADD EXPENSE MODAL ===== -->
+    <div id="expenseModal" class="modal" onclick="if(event.target===this) closeModal('expenseModal')">
+        <div class="modal-box">
+            <div class="modal-head">
+                <h3>Record Expense</h3>
+                <button class="modal-close" onclick="closeModal('expenseModal')">×</button>
+            </div>
+            <div class="modal-body-form">
+                <div class="ok-flash" id="expOk">✅ Expense recorded.</div>
+                <div class="err-flash" id="expErr"></div>
+                <div class="form-row-2">
+                    <div class="form-row">
+                        <label>Amount (MWK) *</label>
+                        <input type="number" id="expAmount" min="0" step="100" placeholder="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Category</label>
+                        <select id="expCategory">
+                            <option>Materials</option>
+                            <option>Labor</option>
+                            <option>Equipment</option>
+                            <option>Transport</option>
+                            <option>Subcontractor</option>
+                            <option>Permits & Fees</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label>Vendor / Payee</label>
+                    <input id="expVendor" placeholder="e.g. Builder Supplies Ltd.">
+                </div>
+                <div class="form-row">
+                    <label>Description</label>
+                    <textarea id="expDesc" placeholder="What was purchased / paid for"></textarea>
+                </div>
+                <p style="font-size: 0.82rem; color: var(--text-muted);">Expenses under K 500,000 are auto-approved. Larger ones go to Pending and need manual approval.</p>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-secondary" onclick="closeModal('expenseModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="createExpense()">Record Expense</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== CREATE INVOICE MODAL ===== -->
+    <div id="invoiceModal" class="modal" onclick="if(event.target===this) closeModal('invoiceModal')">
+        <div class="modal-box">
+            <div class="modal-head">
+                <h3>Create Invoice</h3>
+                <button class="modal-close" onclick="closeModal('invoiceModal')">×</button>
+            </div>
+            <div class="modal-body-form">
+                <div class="ok-flash" id="invOk">✅ Invoice created.</div>
+                <div class="err-flash" id="invErr"></div>
+                <div class="form-row-2">
+                    <div class="form-row">
+                        <label>Invoice Number</label>
+                        <input id="invNumber" placeholder="Auto-generated if blank">
+                    </div>
+                    <div class="form-row">
+                        <label>Amount (MWK) *</label>
+                        <input type="number" id="invAmount" min="0" step="100" placeholder="0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label>Client Name</label>
+                    <input id="invClient" placeholder="e.g. National Oil Company of Malawi">
+                </div>
+                <div class="form-row">
+                    <label>Due Date</label>
+                    <input type="date" id="invDue">
+                </div>
+                <div class="form-row">
+                    <label>Notes</label>
+                    <textarea id="invNotes" placeholder="Optional"></textarea>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-secondary" onclick="closeModal('invoiceModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="createInvoice()">Create Invoice</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== RECORD PAYMENT MODAL ===== -->
+    <div id="paymentModal" class="modal" onclick="if(event.target===this) closeModal('paymentModal')">
+        <div class="modal-box">
+            <div class="modal-head">
+                <h3>Record Payment</h3>
+                <button class="modal-close" onclick="closeModal('paymentModal')">×</button>
+            </div>
+            <div class="modal-body-form">
+                <div class="ok-flash" id="payOk">✅ Payment recorded.</div>
+                <div class="err-flash" id="payErr"></div>
+                <input type="hidden" id="payInvoiceId">
+                <div class="form-row">
+                    <label>Invoice</label>
+                    <input id="payInvoiceLabel" readonly>
+                </div>
+                <div class="form-row-2">
+                    <div class="form-row">
+                        <label>Amount (MWK) *</label>
+                        <input type="number" id="payAmount" min="0" step="100">
+                    </div>
+                    <div class="form-row">
+                        <label>Method</label>
+                        <select id="payMethod">
+                            <option>Bank Transfer</option>
+                            <option>Mobile Money</option>
+                            <option>Cheque</option>
+                            <option>Cash</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label>Reference</label>
+                    <input id="payRef" placeholder="e.g. transaction ID">
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-secondary" onclick="closeModal('paymentModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="recordPayment()">Record Payment</button>
             </div>
         </div>
     </div>
@@ -1539,6 +1764,396 @@
         }
 
         // ====================================================================
+        // PHASE 2 — FINANCIALS
+        // ====================================================================
+        const fmtMWK = (n) => 'MWK ' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+        const fmtPct = (n) => Number(n || 0).toFixed(1) + '%';
+
+        let CURRENT_FIN_PROJECT = null;
+
+        function populateFinProjectPicker() {
+            const sel = document.getElementById('finProjectPicker');
+            if (!sel) return;
+            sel.innerHTML = '<option value="">Select a project…</option>';
+            (CACHED_PROJECTS || []).forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `${p.name} — ${p.client_name || '—'}`;
+                sel.appendChild(opt);
+            });
+        }
+
+        async function onFinProjectChange() {
+            const id = document.getElementById('finProjectPicker').value;
+            CURRENT_FIN_PROJECT = id || null;
+            const ws = document.getElementById('finWorkspace');
+            ws.style.display = id ? 'block' : 'none';
+            if (!id) return;
+            await loadFinancialsForProject(id);
+        }
+
+        async function loadFinancialsForProject(id) {
+            try {
+                const res = await fetch(`${API_URL}/financials/projects/${id}/summary`, {
+                    headers: { 'Authorization': `Bearer ${AUTH.token}` }
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+
+                const fin = data.data.financials;
+                document.getElementById('finRevenue').textContent = fmtMWK(fin?.total_revenue);
+                document.getElementById('finCosts').textContent = fmtMWK(fin?.total_costs);
+                document.getElementById('finProfit').textContent = fmtMWK(fin?.gross_profit);
+                document.getElementById('finPool').textContent = fmtMWK(fin?.distributable_pool);
+                document.getElementById('finCalcStatus').textContent = fin
+                    ? `Last calculated: ${new Date(fin.calculated_at).toLocaleString()}`
+                    : 'No calculation yet — click "Calculate Profit".';
+
+                renderExpenses(data.data.expenses || []);
+                renderInvoices(data.data.invoices || []);
+                renderShares(data.data.shares || []);
+
+                // Distributions for this project
+                const distRes = await fetch(`${API_URL}/financials/distributions`, {
+                    headers: { 'Authorization': `Bearer ${AUTH.token}` }
+                });
+                const distData = await distRes.json();
+                const projectDists = (distData.data || []).filter(d => d.project_id === id);
+                renderDistributions(projectDists);
+            } catch (err) {
+                console.error('loadFinancialsForProject:', err);
+                ['finExpenses','finInvoices','finShares','finDistributions'].forEach(eid => {
+                    const el = document.getElementById(eid);
+                    if (el) el.innerHTML = `<div class="state"><div class="state-icon">⚠️</div><h3>Could not load</h3><p>${escapeHtml(err.message)}</p></div>`;
+                });
+            }
+        }
+
+        function renderExpenses(expenses) {
+            const target = document.getElementById('finExpenses');
+            if (!expenses.length) {
+                target.innerHTML = `<div class="state"><div class="state-icon">📋</div><h3>No expenses yet</h3><p>Click "Add Expense" to record one.</p></div>`;
+                return;
+            }
+            let html = `<table><thead><tr><th>Date</th><th>Category</th><th>Vendor</th><th>Amount</th><th>Status</th><th class="col-actions">Actions</th></tr></thead><tbody>`;
+            expenses.forEach(e => {
+                const date = e.created_at ? new Date(e.created_at).toLocaleDateString() : '—';
+                const actions = e.status === 'Pending'
+                    ? `<button class="btn btn-success btn-sm" onclick="approveExpense('${e.id}')">Approve</button>
+                       <button class="btn btn-danger btn-sm" onclick="rejectExpense('${e.id}')">Reject</button>`
+                    : '';
+                html += `<tr>
+                    <td style="color: var(--text-muted);">${date}</td>
+                    <td>${escapeHtml(e.category || '—')}</td>
+                    <td>${escapeHtml(e.vendor || '—')}</td>
+                    <td><strong>${fmtMWK(e.amount)}</strong></td>
+                    <td>${badgeFor(e.status)}</td>
+                    <td class="col-actions">${actions}</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            target.innerHTML = html;
+        }
+
+        function renderInvoices(invoices) {
+            const target = document.getElementById('finInvoices');
+            if (!invoices.length) {
+                target.innerHTML = `<div class="state"><div class="state-icon">🧾</div><h3>No invoices yet</h3><p>Click "Create Invoice" to issue one.</p></div>`;
+                return;
+            }
+            let html = `<table><thead><tr><th>Invoice #</th><th>Client</th><th>Amount</th><th>Status</th><th class="col-actions">Actions</th></tr></thead><tbody>`;
+            invoices.forEach(inv => {
+                const actions = (inv.status !== 'Paid')
+                    ? `<button class="btn btn-success btn-sm" onclick='openPaymentModal(${JSON.stringify({id: inv.id, label: (inv.invoice_number || "") + " — " + (inv.client_name || ""), amount: inv.amount})})'>Record Payment</button>`
+                    : '';
+                html += `<tr>
+                    <td><strong>${escapeHtml(inv.invoice_number || '—')}</strong></td>
+                    <td>${escapeHtml(inv.client_name || '—')}</td>
+                    <td><strong>${fmtMWK(inv.amount)}</strong></td>
+                    <td>${badgeFor(inv.status)}</td>
+                    <td class="col-actions">${actions}</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            target.innerHTML = html;
+        }
+
+        function renderShares(shares) {
+            const target = document.getElementById('finShares');
+            if (!shares.length) {
+                target.innerHTML = `<div class="state"><div class="state-icon">🧮</div><h3>No shares calculated yet</h3><p>Click "Calculate Shares" once expenses + payments are recorded.</p></div>`;
+                return;
+            }
+            // Need partner names — use CACHED partners or fall back
+            const partnerMap = new Map();
+            (window.CACHED_PARTNERS_FIN || []).forEach(p => partnerMap.set(p.user_id, p.name || p.email));
+
+            let html = `<table><thead><tr>
+                <th>Partner</th><th>Funding %</th><th>Effort %</th><th>Deal %</th><th>Total %</th><th>Gross</th><th>Tax (10%)</th><th>Net Payout</th>
+            </tr></thead><tbody>`;
+            shares.sort((a, b) => (b.total_share_pct || 0) - (a.total_share_pct || 0));
+            shares.forEach(s => {
+                html += `<tr>
+                    <td><strong>${escapeHtml(partnerMap.get(s.partner_id) || s.partner_id.slice(0, 8))}</strong></td>
+                    <td>${fmtPct(s.funding_index_pct)}</td>
+                    <td>${fmtPct(s.effort_index_pct)}</td>
+                    <td>${fmtPct(s.deal_index_pct)}</td>
+                    <td><strong>${fmtPct(s.total_share_pct)}</strong></td>
+                    <td>${fmtMWK(s.gross_amount)}</td>
+                    <td style="color: var(--text-muted);">${fmtMWK(s.tax_withheld)}</td>
+                    <td><strong style="color: var(--success);">${fmtMWK(s.net_amount)}</strong></td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            target.innerHTML = html;
+        }
+
+        function renderDistributions(dists) {
+            const target = document.getElementById('finDistributions');
+            if (!dists.length) {
+                target.innerHTML = `<div class="state"><div class="state-icon">💸</div><h3>No distributions yet</h3><p>Materialize after calculating shares.</p></div>`;
+                return;
+            }
+            const partnerMap = new Map();
+            (window.CACHED_PARTNERS_FIN || []).forEach(p => partnerMap.set(p.user_id, p.name || p.email));
+
+            let html = `<table><thead><tr><th>Partner</th><th>Amount</th><th>Status</th><th>Paid Date</th><th class="col-actions">Actions</th></tr></thead><tbody>`;
+            dists.forEach(d => {
+                const paid = d.paid_at ? new Date(d.paid_at).toLocaleDateString() : '—';
+                const actions = d.status !== 'Paid'
+                    ? `<button class="btn btn-success btn-sm" onclick="markDistributionPaid('${d.id}')">Mark Paid</button>`
+                    : '';
+                html += `<tr>
+                    <td><strong>${escapeHtml(partnerMap.get(d.partner_id) || d.partner_id.slice(0, 8))}</strong></td>
+                    <td><strong>${fmtMWK(d.amount)}</strong></td>
+                    <td>${badgeFor(d.status)}</td>
+                    <td style="color: var(--text-muted);">${paid}</td>
+                    <td class="col-actions">${actions}</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            target.innerHTML = html;
+        }
+
+        // === Calc actions ===
+        async function calcProfit() {
+            if (!CURRENT_FIN_PROJECT) { alert('Pick a project first.'); return; }
+            try {
+                const res = await fetch(`${API_URL}/financials/projects/${CURRENT_FIN_PROJECT}/calculate-profit`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${AUTH.token}` }
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+                document.getElementById('finCalcStatus').textContent = `✅ Profit recalculated at ${new Date().toLocaleString()}`;
+            } catch (err) {
+                alert('Calc error: ' + err.message);
+            }
+        }
+
+        async function calcShares() {
+            if (!CURRENT_FIN_PROJECT) { alert('Pick a project first.'); return; }
+            try {
+                const res = await fetch(`${API_URL}/financials/projects/${CURRENT_FIN_PROJECT}/calculate-shares`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${AUTH.token}` }
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+                document.getElementById('finCalcStatus').textContent = `✅ Shares calculated for ${data.data.shares.length} partner(s).`;
+            } catch (err) {
+                alert('Shares error: ' + err.message);
+            }
+        }
+
+        async function distributePool() {
+            if (!CURRENT_FIN_PROJECT) { alert('Pick a project first.'); return; }
+            if (!confirm('Materialize distribution rows from current shares? This replaces any pending distributions for this project.')) return;
+            try {
+                const res = await fetch(`${API_URL}/financials/projects/${CURRENT_FIN_PROJECT}/distribute`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${AUTH.token}` }
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+            } catch (err) {
+                alert('Distribute error: ' + err.message);
+            }
+        }
+
+        // === Expense actions ===
+        function openExpenseModal() {
+            if (!CURRENT_FIN_PROJECT) { alert('Pick a project first.'); return; }
+            ['expAmount','expVendor','expDesc'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('expCategory').value = 'Materials';
+            document.getElementById('expOk').classList.remove('show');
+            document.getElementById('expErr').classList.remove('show');
+            openModal('expenseModal');
+        }
+
+        async function createExpense() {
+            const amount = Number(document.getElementById('expAmount').value);
+            const category = document.getElementById('expCategory').value;
+            const vendor = document.getElementById('expVendor').value.trim();
+            const description = document.getElementById('expDesc').value.trim();
+            const okEl = document.getElementById('expOk');
+            const errEl = document.getElementById('expErr');
+            okEl.classList.remove('show'); errEl.classList.remove('show');
+
+            if (!amount || amount <= 0) {
+                errEl.textContent = 'Amount required.';
+                errEl.classList.add('show');
+                return;
+            }
+            try {
+                const res = await fetch(`${API_URL}/expenses`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${AUTH.token}` },
+                    body: JSON.stringify({ project_id: CURRENT_FIN_PROJECT, amount, category, vendor, description })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                okEl.classList.add('show');
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+                setTimeout(() => closeModal('expenseModal'), 800);
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.classList.add('show');
+            }
+        }
+
+        async function approveExpense(id) {
+            try {
+                const res = await fetch(`${API_URL}/expenses/${id}/approve`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${AUTH.token}` }
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+            } catch (err) { alert(err.message); }
+        }
+
+        async function rejectExpense(id) {
+            if (!confirm('Reject this expense?')) return;
+            try {
+                const res = await fetch(`${API_URL}/expenses/${id}/reject`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${AUTH.token}` }
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+            } catch (err) { alert(err.message); }
+        }
+
+        // === Invoice actions ===
+        function openInvoiceModal() {
+            if (!CURRENT_FIN_PROJECT) { alert('Pick a project first.'); return; }
+            ['invNumber','invAmount','invClient','invDue','invNotes'].forEach(id => document.getElementById(id).value = '');
+            // Default client_name to project's client
+            const proj = (CACHED_PROJECTS || []).find(p => p.id === CURRENT_FIN_PROJECT);
+            if (proj) document.getElementById('invClient').value = proj.client_name || '';
+            document.getElementById('invOk').classList.remove('show');
+            document.getElementById('invErr').classList.remove('show');
+            openModal('invoiceModal');
+        }
+
+        async function createInvoice() {
+            const invoice_number = document.getElementById('invNumber').value.trim();
+            const amount = Number(document.getElementById('invAmount').value);
+            const client_name = document.getElementById('invClient').value.trim();
+            const due_date = document.getElementById('invDue').value || null;
+            const notes = document.getElementById('invNotes').value.trim();
+            const okEl = document.getElementById('invOk');
+            const errEl = document.getElementById('invErr');
+            okEl.classList.remove('show'); errEl.classList.remove('show');
+
+            if (!amount || amount <= 0) {
+                errEl.textContent = 'Amount required.';
+                errEl.classList.add('show');
+                return;
+            }
+            try {
+                const res = await fetch(`${API_URL}/invoices`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${AUTH.token}` },
+                    body: JSON.stringify({ project_id: CURRENT_FIN_PROJECT, invoice_number, amount, client_name, due_date, notes })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                okEl.classList.add('show');
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+                setTimeout(() => closeModal('invoiceModal'), 800);
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.classList.add('show');
+            }
+        }
+
+        // === Payment actions ===
+        function openPaymentModal(invoice) {
+            document.getElementById('payInvoiceId').value = invoice.id;
+            document.getElementById('payInvoiceLabel').value = invoice.label;
+            document.getElementById('payAmount').value = invoice.amount;
+            document.getElementById('payRef').value = '';
+            document.getElementById('payMethod').value = 'Bank Transfer';
+            document.getElementById('payOk').classList.remove('show');
+            document.getElementById('payErr').classList.remove('show');
+            openModal('paymentModal');
+        }
+
+        async function recordPayment() {
+            const invId = document.getElementById('payInvoiceId').value;
+            const amount = Number(document.getElementById('payAmount').value);
+            const method = document.getElementById('payMethod').value;
+            const reference = document.getElementById('payRef').value.trim();
+            const okEl = document.getElementById('payOk');
+            const errEl = document.getElementById('payErr');
+            okEl.classList.remove('show'); errEl.classList.remove('show');
+
+            if (!amount || amount <= 0) {
+                errEl.textContent = 'Amount required.';
+                errEl.classList.add('show');
+                return;
+            }
+            try {
+                const res = await fetch(`${API_URL}/invoices/${invId}/payments`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${AUTH.token}` },
+                    body: JSON.stringify({ amount, method, reference })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                okEl.classList.add('show');
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+                setTimeout(() => closeModal('paymentModal'), 800);
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.classList.add('show');
+            }
+        }
+
+        // === Distribution actions ===
+        async function markDistributionPaid(id) {
+            const ref = prompt('Payment reference (transaction ID, cheque #, etc.):', '');
+            if (ref === null) return; // cancelled
+            try {
+                const res = await fetch(`${API_URL}/financials/distributions/${id}/pay`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${AUTH.token}` },
+                    body: JSON.stringify({ payment_reference: ref })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                await loadFinancialsForProject(CURRENT_FIN_PROJECT);
+            } catch (err) { alert(err.message); }
+        }
+
+        // ====================================================================
         // BOOT
         // ====================================================================
         window.addEventListener('load', async () => {
@@ -1567,6 +2182,16 @@
                 loadProjects(),
                 loadPartners()
             ]);
+
+            // Populate financial picker now that projects are cached
+            populateFinProjectPicker();
+
+            // Cache partners by user_id for share/distribution rendering
+            try {
+                const res = await fetch(`${API_URL}/partners`, { headers: { 'Authorization': `Bearer ${AUTH.token}` }});
+                const data = await res.json();
+                if (data.success) window.CACHED_PARTNERS_FIN = data.data || [];
+            } catch (e) {}
         });
     </script>
 </body>

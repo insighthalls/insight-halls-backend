@@ -833,11 +833,35 @@
 
                 <!-- ====== DISTRIBUTIONS TAB ====== -->
                 <section class="tab-pane" data-tab-pane="distributions">
-                    <div class="module-notice">
-                        <div class="module-notice-icon">🚧</div>
-                        <div>
-                            <h4>Distributions module is in Phase 4</h4>
-                            <p>Once profit calculations and distribution payments are wired up, your share history will appear here. Until then, the 3-pool engine below is the design preview.</p>
+                    <div class="metrics" style="grid-template-columns: repeat(3, 1fr);">
+                        <div class="metric-card success">
+                            <div class="metric-label">Total Net Received</div>
+                            <div class="metric-value" id="kpiPaidTotal" style="font-size: 1.5rem;">MWK 0</div>
+                            <div class="metric-trend">All-time, after tax</div>
+                        </div>
+                        <div class="metric-card warn">
+                            <div class="metric-label">Pending Payouts</div>
+                            <div class="metric-value" id="kpiPendingTotal" style="font-size: 1.5rem;">MWK 0</div>
+                            <div class="metric-trend">Awaiting transfer</div>
+                        </div>
+                        <div class="metric-card gold">
+                            <div class="metric-label">Distributions Count</div>
+                            <div class="metric-value" id="kpiDistCount">0</div>
+                            <div class="metric-trend">Across all projects</div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <h2>Distribution History</h2>
+                                <p>Your profit share payments, project by project.</p>
+                            </div>
+                        </div>
+                        <div class="panel-body tight">
+                            <div class="table-wrap">
+                                <div id="myDistributions"><div class="state"><div class="state-icon">⏳</div><p>Loading distributions…</p></div></div>
+                            </div>
                         </div>
                     </div>
 
@@ -867,19 +891,8 @@
                                 </div>
                             </div>
                             <p style="color: var(--text-muted); font-size: 0.9rem;">
-                                Reserve fund holds <strong>40%</strong> of gross profit. The remaining <strong>60%</strong> distributable pool is split across partners using the three indices. Final share = (Fund% + Effort% + Deal%) × Distributable Profit, less 10% tax withholding.
+                                Reserve fund holds <strong>40%</strong> of gross profit. The remaining <strong>60%</strong> distributable pool is split across partners using the three indices. Final share = (Fund% × 60% + Effort% × 20% + Deal% × 20%) × Distributable Profit, less 10% tax withholding.
                             </p>
-                        </div>
-                    </div>
-
-                    <div class="panel">
-                        <div class="panel-header"><h2>Distribution History</h2></div>
-                        <div class="panel-body">
-                            <div class="state">
-                                <div class="state-icon">💸</div>
-                                <h3>No distributions yet</h3>
-                                <p>Your profit share payments will list here once distributions are processed.</p>
-                            </div>
                         </div>
                     </div>
                 </section>
@@ -1209,6 +1222,62 @@
         }
 
         // ====================================================================
+        // PHASE 2 — DISTRIBUTIONS
+        // ====================================================================
+        const fmtMWK = (n) => 'MWK ' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+        async function loadMyDistributions() {
+            try {
+                const res = await fetch(`${API_URL}/financials/me/distributions`, {
+                    headers: { 'Authorization': `Bearer ${AUTH.token}` }
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+
+                const dists = data.data || [];
+                const target = document.getElementById('myDistributions');
+
+                // KPIs
+                const paid = dists.filter(d => d.status === 'Paid');
+                const pending = dists.filter(d => d.status !== 'Paid');
+                const totalPaid = paid.reduce((s, d) => s + Number(d.amount || 0), 0);
+                const totalPending = pending.reduce((s, d) => s + Number(d.amount || 0), 0);
+                document.getElementById('kpiPaidTotal').textContent = fmtMWK(totalPaid);
+                document.getElementById('kpiPendingTotal').textContent = fmtMWK(totalPending);
+                document.getElementById('kpiDistCount').textContent = dists.length;
+
+                if (!dists.length) {
+                    target.innerHTML = `<div class="state"><div class="state-icon">💸</div><h3>No distributions yet</h3><p>Your profit share payments will list here once they're processed.</p></div>`;
+                    return;
+                }
+
+                // Need project names — fetch projects we already have via dashboard data
+                const projects = (DASHBOARD_DATA && DASHBOARD_DATA.projects) || [];
+                const projMap = new Map(projects.map(p => [p.id, p.name]));
+
+                let html = `<table><thead><tr>
+                    <th>Project</th><th>Amount</th><th>Status</th><th>Paid Date</th><th>Reference</th>
+                </tr></thead><tbody>`;
+                dists.forEach(d => {
+                    const paidDate = d.paid_at ? new Date(d.paid_at).toLocaleDateString() : '—';
+                    html += `<tr>
+                        <td><strong>${escapeHtml(projMap.get(d.project_id) || 'Project')}</strong></td>
+                        <td><strong>${fmtMWK(d.amount)}</strong></td>
+                        <td>${badgeFor(d.status)}</td>
+                        <td style="color: var(--text-muted);">${paidDate}</td>
+                        <td style="color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${escapeHtml(d.payment_reference || '—')}</td>
+                    </tr>`;
+                });
+                html += `</tbody></table>`;
+                target.innerHTML = html;
+            } catch (err) {
+                console.error('loadMyDistributions:', err);
+                document.getElementById('myDistributions').innerHTML =
+                    `<div class="state"><div class="state-icon">⚠️</div><h3>Could not load</h3><p>${escapeHtml(err.message)}</p></div>`;
+            }
+        }
+
+        // ====================================================================
         // BOOT
         // ====================================================================
         window.addEventListener('load', async () => {
@@ -1228,6 +1297,7 @@
             fillProfile(null);
 
             await loadDashboard();
+            await loadMyDistributions();
         });
     </script>
 </body>
