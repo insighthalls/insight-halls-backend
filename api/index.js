@@ -394,6 +394,562 @@ app.get('/api/health', (req, res) => {
 });
 
 // ============================================================================
+// PHASE 2 — EXPENSES
+// ============================================================================
+
+// Tiered approval helper
+const autoApprovalStatus = (amount) => {
+    // < K500K → auto-approved; otherwise pending until approved manually
+    if (Number(amount) < 500000) return 'Approved';
+    return 'Pending';
+};
+
+app.get('/api/expenses', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { project_id } = req.query;
+        let query = supabase.from('expenses').select('*').order('created_at', { ascending: false });
+        if (project_id) query = query.eq('project_id', project_id);
+        const { data, error } = await query;
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/projects/:id/expenses', protect, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('expenses').select('*').eq('project_id', req.params.id)
+            .order('created_at', { ascending: false });
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/expenses', protect, async (req, res) => {
+    try {
+        const { project_id, category, amount, vendor, description, receipt_url } = req.body;
+        if (!project_id || !amount) {
+            return res.status(400).json({ success: false, message: 'project_id and amount are required' });
+        }
+        const status = autoApprovalStatus(amount);
+        const insertData = {
+            project_id, category, amount: Number(amount), vendor, description,
+            receipt_url, status, created_by: req.user.id
+        };
+        if (status === 'Approved') {
+            insertData.approved_by = req.user.id;
+            insertData.approved_at = new Date().toISOString();
+        }
+        const { data, error } = await supabase.from('expenses').insert(insertData).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.status(201).json({ success: true, data: data[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.patch('/api/expenses/:id/approve', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { data, error } = await supabase.from('expenses')
+            .update({
+                status: 'Approved',
+                approved_by: req.user.id,
+                approved_at: new Date().toISOString()
+            })
+            .eq('id', req.params.id).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.patch('/api/expenses/:id/reject', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { data, error } = await supabase.from('expenses')
+            .update({ status: 'Rejected', approved_by: req.user.id, approved_at: new Date().toISOString() })
+            .eq('id', req.params.id).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================================
+// PHASE 2 — INVOICES
+// ============================================================================
+
+app.get('/api/invoices', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { data, error } = await supabase.from('invoices').select('*').order('created_at', { ascending: false });
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/projects/:id/invoices', protect, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('invoices').select('*').eq('project_id', req.params.id)
+            .order('created_at', { ascending: false });
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/invoices', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { project_id, invoice_number, client_name, amount, due_date, notes } = req.body;
+        if (!project_id || !amount) {
+            return res.status(400).json({ success: false, message: 'project_id and amount are required' });
+        }
+        const { data, error } = await supabase.from('invoices').insert({
+            project_id,
+            invoice_number: invoice_number || `INV-${Date.now()}`,
+            client_name,
+            amount: Number(amount),
+            status: 'Draft',
+            due_date,
+            notes
+        }).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.status(201).json({ success: true, data: data[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.patch('/api/invoices/:id', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const updates = {};
+        ['status', 'invoice_number', 'client_name', 'amount', 'due_date', 'paid_date', 'notes']
+            .forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+        if (updates.amount !== undefined) updates.amount = Number(updates.amount);
+
+        const { data, error } = await supabase.from('invoices').update(updates).eq('id', req.params.id).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================================
+// PHASE 2 — PAYMENTS
+// ============================================================================
+
+app.post('/api/invoices/:id/payments', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { amount, method, reference } = req.body;
+        if (!amount) {
+            return res.status(400).json({ success: false, message: 'amount is required' });
+        }
+
+        // Get invoice to find project_id and current paid status
+        const { data: invoice, error: invErr } = await supabase
+            .from('invoices').select('*').eq('id', req.params.id).single();
+        if (invErr || !invoice) {
+            return res.status(404).json({ success: false, message: 'Invoice not found' });
+        }
+
+        // Insert payment
+        const { data: payment, error: payErr } = await supabase.from('payments').insert({
+            invoice_id: req.params.id,
+            project_id: invoice.project_id,
+            amount: Number(amount),
+            method, reference
+        }).select();
+        if (payErr) return res.status(500).json({ success: false, message: payErr.message });
+
+        // If payment >= invoice amount, mark invoice paid
+        const { data: existingPayments } = await supabase.from('payments').select('amount').eq('invoice_id', req.params.id);
+        const totalPaid = (existingPayments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+        if (totalPaid >= Number(invoice.amount)) {
+            await supabase.from('invoices').update({
+                status: 'Paid',
+                paid_date: new Date().toISOString().slice(0, 10)
+            }).eq('id', req.params.id);
+        }
+
+        return res.status(201).json({ success: true, data: payment[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================================
+// PHASE 2 — FINANCIAL CALCULATION (3-pool engine)
+// ============================================================================
+
+app.post('/api/financials/projects/:id/calculate-profit', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const projectId = req.params.id;
+
+        // Sum payments (revenue) for this project
+        const { data: payments } = await supabase.from('payments').select('amount').eq('project_id', projectId);
+        const totalRevenue = (payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+
+        // Sum approved expenses (costs) for this project
+        const { data: expenses } = await supabase
+            .from('expenses').select('amount').eq('project_id', projectId).eq('status', 'Approved');
+        const totalCosts = (expenses || []).reduce((s, e) => s + Number(e.amount || 0), 0);
+
+        const grossProfit = totalRevenue - totalCosts;
+        const reserveFund = Math.max(0, grossProfit) * 0.40;
+        const distributablePool = Math.max(0, grossProfit) * 0.60;
+
+        // Upsert project_financials
+        const { data: existing } = await supabase
+            .from('project_financials').select('id').eq('project_id', projectId).maybeSingle();
+
+        const payload = {
+            project_id: projectId,
+            total_revenue: totalRevenue,
+            total_costs: totalCosts,
+            gross_profit: grossProfit,
+            reserve_fund: reserveFund,
+            distributable_pool: distributablePool,
+            calculated_at: new Date().toISOString()
+        };
+
+        let result;
+        if (existing) {
+            const { data, error } = await supabase.from('project_financials')
+                .update(payload).eq('project_id', projectId).select();
+            if (error) return res.status(500).json({ success: false, message: error.message });
+            result = data[0];
+        } else {
+            const { data, error } = await supabase.from('project_financials').insert(payload).select();
+            if (error) return res.status(500).json({ success: false, message: error.message });
+            result = data[0];
+        }
+
+        return res.json({ success: true, data: result });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/financials/projects/:id/calculate-shares', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const projectId = req.params.id;
+
+        // Need project_financials first
+        const { data: fin } = await supabase
+            .from('project_financials').select('*').eq('project_id', projectId).maybeSingle();
+        if (!fin) {
+            return res.status(400).json({
+                success: false,
+                message: 'Run /calculate-profit first — no financials found for this project.'
+            });
+        }
+
+        const distributable = Number(fin.distributable_pool) || 0;
+
+        // All Partner+Admin users (anyone who can earn shares)
+        const { data: allUsers } = await supabase
+            .from('users').select('id, name, email, role')
+            .in('role', ['Partner', 'Administrator'])
+            .eq('status', 'Active');
+
+        // Funding (capital) per partner — from partner_funding (Verified only)
+        const { data: fundingRows } = await supabase
+            .from('partner_funding').select('partner_id, amount, status').eq('status', 'Verified');
+
+        // partner_funding.partner_id refers to partners.id. Look up users via partners table.
+        const { data: partnerLinks } = await supabase
+            .from('partners').select('id, user_id');
+        const partnerToUser = new Map((partnerLinks || []).map(p => [p.id, p.user_id]));
+
+        // Sum funding per user_id, but only for THIS project — partner_funding has project_id too
+        const { data: projectFunding } = await supabase
+            .from('partner_funding').select('partner_id, amount, status, project_id')
+            .eq('project_id', projectId).eq('status', 'Verified');
+
+        const fundingPerUser = new Map();
+        (projectFunding || []).forEach(f => {
+            const userId = partnerToUser.get(f.partner_id);
+            if (!userId) return;
+            fundingPerUser.set(userId, (fundingPerUser.get(userId) || 0) + Number(f.amount || 0));
+        });
+        const totalFunding = Array.from(fundingPerUser.values()).reduce((s, v) => s + v, 0);
+
+        // Effort ratings — average rating per rated_partner_id for this project
+        const { data: ratings } = await supabase
+            .from('effort_ratings').select('rated_partner_id, rating').eq('project_id', projectId);
+        const ratingsByUser = new Map();
+        (ratings || []).forEach(r => {
+            if (!ratingsByUser.has(r.rated_partner_id)) ratingsByUser.set(r.rated_partner_id, []);
+            ratingsByUser.get(r.rated_partner_id).push(Number(r.rating));
+        });
+        const avgEffort = new Map();
+        for (const [uid, list] of ratingsByUser) {
+            avgEffort.set(uid, list.reduce((s, v) => s + v, 0) / list.length);
+        }
+        const totalEffort = Array.from(avgEffort.values()).reduce((s, v) => s + v, 0);
+
+        // Deal sourcing
+        const { data: dealRows } = await supabase
+            .from('deal_sourcing_register').select('partner_id, share_pct').eq('project_id', projectId);
+        const dealPerUser = new Map();
+        (dealRows || []).forEach(d => {
+            dealPerUser.set(d.partner_id, (dealPerUser.get(d.partner_id) || 0) + Number(d.share_pct || 0));
+        });
+        const totalDeal = Array.from(dealPerUser.values()).reduce((s, v) => s + v, 0);
+
+        // Compute and upsert each user's share
+        const shares = [];
+        for (const u of (allUsers || [])) {
+            const fundingPct = totalFunding > 0 ? (fundingPerUser.get(u.id) || 0) / totalFunding * 100 : 0;
+            const effortPct = totalEffort > 0 ? (avgEffort.get(u.id) || 0) / totalEffort * 100 : 0;
+            const dealPct = totalDeal > 0 ? (dealPerUser.get(u.id) || 0) / totalDeal * 100 : 0;
+
+            const totalSharePct =
+                (fundingPct * 0.60) + (effortPct * 0.20) + (dealPct * 0.20);
+
+            if (totalSharePct === 0) continue;
+
+            const grossAmount = distributable * totalSharePct / 100;
+            const tax = grossAmount * 0.10;
+            const net = grossAmount - tax;
+
+            // Upsert (delete-then-insert to avoid uniqueness fight)
+            await supabase.from('project_profit_share')
+                .delete().eq('project_id', projectId).eq('partner_id', u.id);
+            await supabase.from('project_profit_share').insert({
+                project_id: projectId,
+                partner_id: u.id,
+                funding_index_pct: fundingPct,
+                effort_index_pct: effortPct,
+                deal_index_pct: dealPct,
+                total_share_pct: totalSharePct,
+                gross_amount: grossAmount,
+                tax_withheld: tax,
+                net_amount: net,
+                calculated_at: new Date().toISOString()
+            });
+
+            shares.push({
+                partner_id: u.id,
+                partner_name: u.name,
+                partner_email: u.email,
+                funding_index_pct: fundingPct,
+                effort_index_pct: effortPct,
+                deal_index_pct: dealPct,
+                total_share_pct: totalSharePct,
+                gross_amount: grossAmount,
+                tax_withheld: tax,
+                net_amount: net
+            });
+        }
+
+        return res.json({
+            success: true,
+            data: {
+                distributable_pool: distributable,
+                shares: shares.sort((a, b) => b.total_share_pct - a.total_share_pct)
+            }
+        });
+    } catch (e) {
+        console.error('calculate-shares error:', e);
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/financials/projects/:id/summary', protect, async (req, res) => {
+    try {
+        const projectId = req.params.id;
+        const [
+            { data: project },
+            { data: fin },
+            { data: expenses },
+            { data: invoices },
+            { data: shares }
+        ] = await Promise.all([
+            supabase.from('projects').select('*').eq('id', projectId).maybeSingle(),
+            supabase.from('project_financials').select('*').eq('project_id', projectId).maybeSingle(),
+            supabase.from('expenses').select('*').eq('project_id', projectId),
+            supabase.from('invoices').select('*').eq('project_id', projectId),
+            supabase.from('project_profit_share').select('*').eq('project_id', projectId)
+        ]);
+
+        return res.json({
+            success: true,
+            data: {
+                project: project || null,
+                financials: fin || null,
+                expenses: expenses || [],
+                invoices: invoices || [],
+                shares: shares || []
+            }
+        });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/financials/projects/:id/profit-shares', protect, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('project_profit_share').select('*').eq('project_id', req.params.id);
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================================
+// PHASE 2 — DISTRIBUTIONS
+// ============================================================================
+
+app.get('/api/financials/distributions', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('profit_distributions').select('*').order('created_at', { ascending: false });
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/financials/me/distributions', protect, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('profit_distributions').select('*')
+            .eq('partner_id', req.user.id)
+            .order('created_at', { ascending: false });
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/financials/projects/:id/distribute', protect, authorize('Administrator'), async (req, res) => {
+    // Materialize a distribution row per partner from the calculated shares
+    try {
+        const projectId = req.params.id;
+        const { data: shares, error: sErr } = await supabase
+            .from('project_profit_share').select('*').eq('project_id', projectId);
+        if (sErr) return res.status(500).json({ success: false, message: sErr.message });
+        if (!shares || !shares.length) {
+            return res.status(400).json({ success: false, message: 'Calculate shares first' });
+        }
+
+        const inserts = shares.map(s => ({
+            project_id: projectId,
+            partner_id: s.partner_id,
+            amount: s.net_amount,
+            status: 'Pending'
+        }));
+
+        // Avoid duplicates: delete existing pending distributions for this project, then insert
+        await supabase.from('profit_distributions')
+            .delete().eq('project_id', projectId).eq('status', 'Pending');
+
+        const { data, error } = await supabase.from('profit_distributions').insert(inserts).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+
+        return res.status(201).json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.patch('/api/financials/distributions/:id/pay', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { payment_reference } = req.body;
+        const { data, error } = await supabase.from('profit_distributions')
+            .update({
+                status: 'Paid',
+                payment_reference: payment_reference || null,
+                paid_at: new Date().toISOString()
+            })
+            .eq('id', req.params.id).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================================
+// PHASE 2 — EFFORT RATINGS & DEAL SOURCING
+// ============================================================================
+
+app.post('/api/projects/:id/effort-ratings', protect, async (req, res) => {
+    try {
+        const { rated_partner_id, rating, comment } = req.body;
+        if (!rated_partner_id || !rating) {
+            return res.status(400).json({ success: false, message: 'rated_partner_id and rating required' });
+        }
+        const { data, error } = await supabase.from('effort_ratings').insert({
+            project_id: req.params.id,
+            rater_id: req.user.id,
+            rated_partner_id,
+            rating: Number(rating),
+            comment
+        }).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.status(201).json({ success: true, data: data[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/projects/:id/effort-ratings', protect, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('effort_ratings').select('*').eq('project_id', req.params.id);
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/projects/:id/deal-source', protect, authorize('Administrator'), async (req, res) => {
+    try {
+        const { partner_id, share_pct, notes } = req.body;
+        if (!partner_id) {
+            return res.status(400).json({ success: false, message: 'partner_id required' });
+        }
+        const { data, error } = await supabase.from('deal_sourcing_register').insert({
+            project_id: req.params.id,
+            partner_id,
+            share_pct: Number(share_pct || 100),
+            notes
+        }).select();
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.status(201).json({ success: true, data: data[0] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/projects/:id/deal-source', protect, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('deal_sourcing_register').select('*').eq('project_id', req.params.id);
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================================
 // 404 + ERROR HANDLERS
 // ============================================================================
 app.use('/api', (req, res) => {
