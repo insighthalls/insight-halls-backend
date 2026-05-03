@@ -83,34 +83,59 @@ const generateToken = (userId, email, name, role) =>
 // ============================================================================
 // AUTH — UNIFIED LOGIN (Admin + Partners)
 // ============================================================================
+
+// Authorised users and their passwords
+// NOTE: replace with bcrypt-hashed passwords stored in DB in production.
+const VALID_PASSWORDS = {
+    'mayendayendab@gmail.com':                  'admin123',
+    'isaac.mzokomera@insighthalls.com':         'partner123',
+    'basiwel.mayendayenda@insighthalls.com':    'partner123',
+    'amwinye.kamange@insighthalls.com':         'partner123',
+    'misheck@insighthalls.com':                 'partner123',
+    'adam.abdulrasheed@insighthalls.com':       'partner123',
+};
+
+// Default names in case we need to create the user record on first login
+const DEFAULT_NAMES = {
+    'mayendayendab@gmail.com':                  'B. Mayendayenda',
+    'isaac.mzokomera@insighthalls.com':         'Isaac Mzokomera',
+    'basiwel.mayendayenda@insighthalls.com':    'Basiwel Mayendayenda',
+    'amwinye.kamange@insighthalls.com':         'Amwinye Kamange',
+    'misheck@insighthalls.com':                 'Misheck Magombo',
+    'adam.abdulrasheed@insighthalls.com':       'Adam AbdulRasheed',
+};
+
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         console.log('Login attempt:', email);
 
-        const { data: user, error } = await supabase
+        // 1. Check the hardcoded allow-list first (fast-fail)
+        if (!VALID_PASSWORDS[email] || VALID_PASSWORDS[email] !== password) {
+            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        }
+
+        // 2. Find the user in Supabase
+        let { data: user, error } = await supabase
             .from('users')
             .select('*')
             .eq('email', email)
             .eq('status', 'Active')
-            .single();
+            .maybeSingle();   // won't error on zero rows
 
-        if (error || !user) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
-        }
-
-        // TODO: replace this with bcrypt-hashed passwords stored in the users table.
-        const validPasswords = {
-            'mayendayendab@gmail.com': 'admin123',
-            'isaac.mzokomera@insighthalls.com': 'partner123',
-            'webster.chipwaila@insighthalls.com': 'partner123',
-            'basiwel.mayendayenda@insighthalls.com': 'partner123',
-            'misheck@insighthalls.com': 'partner123',
-            'adam.abdulrasheed@insighthalls.com': 'partner123'
-        };
-
-        if (validPasswords[email] !== password) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        // 3. If not in DB yet, auto-create them (recovery path)
+        if (!user) {
+            const role = email === 'mayendayendab@gmail.com' ? 'Administrator' : 'Partner';
+            const { data: created, error: createErr } = await supabase
+                .from('users')
+                .insert({ email, name: DEFAULT_NAMES[email] || email, role, status: 'Active' })
+                .select()
+                .single();
+            if (createErr || !created) {
+                console.error('Auto-create user failed:', createErr);
+                return res.status(500).json({ success: false, message: 'Could not create user record', error: createErr?.message });
+            }
+            user = created;
         }
 
         const token = generateToken(user.id, email, user.name, user.role);
@@ -174,8 +199,14 @@ app.get('/api/auth/profile', protect, async (req, res) => {
 
         let partnerDetails = null;
         if (user.role === 'Partner') {
+            // Prefer the most-recently-created partner record to avoid stale duplicates
             const { data: partner } = await supabase
-                .from('partners').select('*').eq('user_id', user.id).single();
+                .from('partners')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
             partnerDetails = partner;
         }
 
@@ -314,39 +345,218 @@ app.post('/api/projects', protect, authorize('Administrator'), async (req, res) 
 });
 
 // ============================================================================
-// PARTNERS
+// PARTNERS — Admin view (deduplicated)
 // ============================================================================
 app.get('/api/partners', protect, authorize('Administrator'), async (req, res) => {
     try {
-        const { data, error } = await supabase.from('partner_dashboard').select('*');
+        // Query unique Partner users joined with their latest partner record
+        const { data: users, error } = await supabase
+            .from('users')
+            .select('id, name, email, role, status')
+            .eq('role', 'Partner')
+            .eq('status', 'Active')
+            .order('name', { ascending: true });
+
         if (error) {
             return res.status(500).json({ success: false, message: 'Error fetching partners', error: error.message });
         }
-        return res.json({ success: true, data: data || [] });
+
+        // Enrich each user with their latest partner record
+        const enriched = await Promise.all((users || []).map(async (u) => {
+            const { data: partner } = await supabase
+                .from('partners')
+                .select('*')
+                .eq('user_id', u.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            return { ...u, partnerRecord: partner || null };
+        }));
+
+        return res.json({ success: true, data: enriched });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error fetching partners', error: error.message });
     }
 });
 
+// ============================================================================
+// PARTNER — Self-service dashboard (enhanced)
+// ============================================================================
 app.get('/api/partners/me/dashboard', protect, authorize('Partner'), async (req, res) => {
     try {
+        // Latest partner record for this user
         const { data: partnerData, error: partnerError } = await supabase
-            .from('partners').select('*').eq('user_id', req.user.id).single();
+            .from('partners')
+            .select('*')
+            .eq('user_id', req.user.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
         if (partnerError) {
             return res.status(404).json({ success: false, message: 'Partner profile not found' });
         }
 
-        const { data: funding } = await supabase
-            .from('partner_funding').select('*').eq('partner_id', partnerData.id);
-        const { data: projects } = await supabase.from('projects').select('*');
+        // All projects
+        const { data: projects } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+
+        // Funding for this partner (across all their partner records)
+        let funding = [];
+        if (partnerData) {
+            // Get all partner record IDs for this user to catch any duplicates
+            const { data: allPartnerRecs } = await supabase
+                .from('partners').select('id').eq('user_id', req.user.id);
+            const partnerIds = (allPartnerRecs || []).map(p => p.id);
+            if (partnerIds.length) {
+                const { data: fundingData } = await supabase
+                    .from('partner_funding')
+                    .select('*')
+                    .in('partner_id', partnerIds)
+                    .order('created_at', { ascending: false });
+                funding = fundingData || [];
+            }
+        }
+
+        // Profit shares for this user (from project_profit_share — partner_id = user id here)
+        const { data: profitShares } = await supabase
+            .from('project_profit_share')
+            .select('*')
+            .eq('partner_id', req.user.id);
+
+        // Deal sourcing — projects where this partner is the deal sourcer
+        // deal_sourcing_register.partner_id can be user_id directly
+        const { data: dealSourcing } = await supabase
+            .from('deal_sourcing_register')
+            .select('*')
+            .eq('partner_id', req.user.id);
+
+        // Expenses submitted by this user
+        const { data: expenses } = await supabase
+            .from('expenses')
+            .select('*')
+            .eq('created_by', req.user.id)
+            .order('created_at', { ascending: false });
+
+        // All deal sourcing (so partner can see who sourced each project)
+        const { data: allDealSourcing } = await supabase
+            .from('deal_sourcing_register')
+            .select('*, users:partner_id(name, email)');
+
+        // Effort ratings received by this partner
+        const { data: effortRatings } = await supabase
+            .from('effort_ratings')
+            .select('*')
+            .eq('rated_partner_id', req.user.id);
 
         return res.json({
             success: true,
-            data: { partner: partnerData, funding: funding || [], projects: projects || [] }
+            data: {
+                partner: partnerData,
+                funding: funding,
+                projects: projects || [],
+                profitShares: profitShares || [],
+                dealSourcing: dealSourcing || [],
+                allDealSourcing: allDealSourcing || [],
+                expenses: expenses || [],
+                effortRatings: effortRatings || []
+            }
         });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error fetching partner dashboard', error: error.message });
+    }
+});
+
+// ============================================================================
+// PARTNER — Submit funding contribution
+// ============================================================================
+app.post('/api/partners/me/funding', protect, authorize('Partner'), async (req, res) => {
+    try {
+        const { project_id, amount, notes } = req.body;
+        if (!project_id || !amount) {
+            return res.status(400).json({ success: false, message: 'project_id and amount are required' });
+        }
+
+        // Find or create the partner record for this user
+        let { data: partnerRec } = await supabase
+            .from('partners')
+            .select('id')
+            .eq('user_id', req.user.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (!partnerRec) {
+            // Auto-create a partner record
+            const { data: newRec, error: recErr } = await supabase
+                .from('partners')
+                .insert({ user_id: req.user.id, email: req.user.email, status: 'Active', company_name: 'Insight Halls Engineering' })
+                .select()
+                .single();
+            if (recErr) return res.status(500).json({ success: false, message: 'Could not create partner record', error: recErr.message });
+            partnerRec = newRec;
+        }
+
+        const { data, error } = await supabase
+            .from('partner_funding')
+            .insert({
+                partner_id: partnerRec.id,
+                project_id,
+                amount: Number(amount),
+                status: 'Pending',
+                notes: notes || null,
+                created_at: new Date().toISOString()
+            })
+            .select();
+
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.status(201).json({ success: true, data: data[0], message: 'Funding submission received. Admin will verify it.' });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================================
+// PARTNER — My profit shares across projects
+// ============================================================================
+app.get('/api/financials/me/profit-shares', protect, async (req, res) => {
+    try {
+        const { data: shares, error } = await supabase
+            .from('project_profit_share')
+            .select('*')
+            .eq('partner_id', req.user.id)
+            .order('calculated_at', { ascending: false });
+
+        if (error) return res.status(500).json({ success: false, message: error.message });
+
+        // Enrich with project names
+        const projectIds = [...new Set((shares || []).map(s => s.project_id))];
+        let projectMap = {};
+        if (projectIds.length) {
+            const { data: projs } = await supabase.from('projects').select('id, name').in('id', projectIds);
+            (projs || []).forEach(p => { projectMap[p.id] = p.name; });
+        }
+
+        const enriched = (shares || []).map(s => ({ ...s, project_name: projectMap[s.project_id] || 'Unknown' }));
+        return res.json({ success: true, data: enriched });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================================
+// PARTNER — My submitted expenses
+// ============================================================================
+app.get('/api/partners/me/expenses', protect, authorize('Partner'), async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('expenses')
+            .select('*')
+            .eq('created_by', req.user.id)
+            .order('created_at', { ascending: false });
+        if (error) return res.status(500).json({ success: false, message: error.message });
+        return res.json({ success: true, data: data || [] });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
     }
 });
 
@@ -399,7 +609,6 @@ app.get('/api/health', (req, res) => {
 
 // Tiered approval helper
 const autoApprovalStatus = (amount) => {
-    // < K500K → auto-approved; otherwise pending until approved manually
     if (Number(amount) < 500000) return 'Approved';
     return 'Pending';
 };
@@ -429,13 +638,14 @@ app.get('/api/projects/:id/expenses', protect, async (req, res) => {
     }
 });
 
+// Both admin and partners can submit expenses
 app.post('/api/expenses', protect, async (req, res) => {
     try {
         const { project_id, category, amount, vendor, description, receipt_url } = req.body;
         if (!project_id || !amount) {
             return res.status(400).json({ success: false, message: 'project_id and amount are required' });
         }
-        const status = autoApprovalStatus(amount);
+        const status = req.user.role === 'Administrator' ? autoApprovalStatus(amount) : 'Pending';
         const insertData = {
             project_id, category, amount: Number(amount), vendor, description,
             receipt_url, status, created_by: req.user.id
@@ -554,14 +764,12 @@ app.post('/api/invoices/:id/payments', protect, authorize('Administrator'), asyn
             return res.status(400).json({ success: false, message: 'amount is required' });
         }
 
-        // Get invoice to find project_id and current paid status
         const { data: invoice, error: invErr } = await supabase
             .from('invoices').select('*').eq('id', req.params.id).single();
         if (invErr || !invoice) {
             return res.status(404).json({ success: false, message: 'Invoice not found' });
         }
 
-        // Insert payment
         const { data: payment, error: payErr } = await supabase.from('payments').insert({
             invoice_id: req.params.id,
             project_id: invoice.project_id,
@@ -570,7 +778,6 @@ app.post('/api/invoices/:id/payments', protect, authorize('Administrator'), asyn
         }).select();
         if (payErr) return res.status(500).json({ success: false, message: payErr.message });
 
-        // If payment >= invoice amount, mark invoice paid
         const { data: existingPayments } = await supabase.from('payments').select('amount').eq('invoice_id', req.params.id);
         const totalPaid = (existingPayments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
         if (totalPaid >= Number(invoice.amount)) {
@@ -594,11 +801,9 @@ app.post('/api/financials/projects/:id/calculate-profit', protect, authorize('Ad
     try {
         const projectId = req.params.id;
 
-        // Sum payments (revenue) for this project
         const { data: payments } = await supabase.from('payments').select('amount').eq('project_id', projectId);
         const totalRevenue = (payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
 
-        // Sum approved expenses (costs) for this project
         const { data: expenses } = await supabase
             .from('expenses').select('amount').eq('project_id', projectId).eq('status', 'Approved');
         const totalCosts = (expenses || []).reduce((s, e) => s + Number(e.amount || 0), 0);
@@ -607,7 +812,6 @@ app.post('/api/financials/projects/:id/calculate-profit', protect, authorize('Ad
         const reserveFund = Math.max(0, grossProfit) * 0.40;
         const distributablePool = Math.max(0, grossProfit) * 0.60;
 
-        // Upsert project_financials
         const { data: existing } = await supabase
             .from('project_financials').select('id').eq('project_id', projectId).maybeSingle();
 
@@ -643,7 +847,6 @@ app.post('/api/financials/projects/:id/calculate-shares', protect, authorize('Ad
     try {
         const projectId = req.params.id;
 
-        // Need project_financials first
         const { data: fin } = await supabase
             .from('project_financials').select('*').eq('project_id', projectId).maybeSingle();
         if (!fin) {
@@ -655,22 +858,15 @@ app.post('/api/financials/projects/:id/calculate-shares', protect, authorize('Ad
 
         const distributable = Number(fin.distributable_pool) || 0;
 
-        // All Partner+Admin users (anyone who can earn shares)
         const { data: allUsers } = await supabase
             .from('users').select('id, name, email, role')
             .in('role', ['Partner', 'Administrator'])
             .eq('status', 'Active');
 
-        // Funding (capital) per partner — from partner_funding (Verified only)
-        const { data: fundingRows } = await supabase
-            .from('partner_funding').select('partner_id, amount, status').eq('status', 'Verified');
-
-        // partner_funding.partner_id refers to partners.id. Look up users via partners table.
         const { data: partnerLinks } = await supabase
             .from('partners').select('id, user_id');
         const partnerToUser = new Map((partnerLinks || []).map(p => [p.id, p.user_id]));
 
-        // Sum funding per user_id, but only for THIS project — partner_funding has project_id too
         const { data: projectFunding } = await supabase
             .from('partner_funding').select('partner_id, amount, status, project_id')
             .eq('project_id', projectId).eq('status', 'Verified');
@@ -683,7 +879,6 @@ app.post('/api/financials/projects/:id/calculate-shares', protect, authorize('Ad
         });
         const totalFunding = Array.from(fundingPerUser.values()).reduce((s, v) => s + v, 0);
 
-        // Effort ratings — average rating per rated_partner_id for this project
         const { data: ratings } = await supabase
             .from('effort_ratings').select('rated_partner_id, rating').eq('project_id', projectId);
         const ratingsByUser = new Map();
@@ -697,7 +892,7 @@ app.post('/api/financials/projects/:id/calculate-shares', protect, authorize('Ad
         }
         const totalEffort = Array.from(avgEffort.values()).reduce((s, v) => s + v, 0);
 
-        // Deal sourcing
+        // Deal sourcing — partner_id in deal_sourcing_register is user_id directly
         const { data: dealRows } = await supabase
             .from('deal_sourcing_register').select('partner_id, share_pct').eq('project_id', projectId);
         const dealPerUser = new Map();
@@ -706,15 +901,13 @@ app.post('/api/financials/projects/:id/calculate-shares', protect, authorize('Ad
         });
         const totalDeal = Array.from(dealPerUser.values()).reduce((s, v) => s + v, 0);
 
-        // Compute and upsert each user's share
         const shares = [];
         for (const u of (allUsers || [])) {
             const fundingPct = totalFunding > 0 ? (fundingPerUser.get(u.id) || 0) / totalFunding * 100 : 0;
             const effortPct = totalEffort > 0 ? (avgEffort.get(u.id) || 0) / totalEffort * 100 : 0;
             const dealPct = totalDeal > 0 ? (dealPerUser.get(u.id) || 0) / totalDeal * 100 : 0;
 
-            const totalSharePct =
-                (fundingPct * 0.60) + (effortPct * 0.20) + (dealPct * 0.20);
+            const totalSharePct = (fundingPct * 0.60) + (effortPct * 0.20) + (dealPct * 0.20);
 
             if (totalSharePct === 0) continue;
 
@@ -722,7 +915,6 @@ app.post('/api/financials/projects/:id/calculate-shares', protect, authorize('Ad
             const tax = grossAmount * 0.10;
             const net = grossAmount - tax;
 
-            // Upsert (delete-then-insert to avoid uniqueness fight)
             await supabase.from('project_profit_share')
                 .delete().eq('project_id', projectId).eq('partner_id', u.id);
             await supabase.from('project_profit_share').insert({
@@ -837,7 +1029,6 @@ app.get('/api/financials/me/distributions', protect, async (req, res) => {
 });
 
 app.post('/api/financials/projects/:id/distribute', protect, authorize('Administrator'), async (req, res) => {
-    // Materialize a distribution row per partner from the calculated shares
     try {
         const projectId = req.params.id;
         const { data: shares, error: sErr } = await supabase
@@ -854,7 +1045,6 @@ app.post('/api/financials/projects/:id/distribute', protect, authorize('Administ
             status: 'Pending'
         }));
 
-        // Avoid duplicates: delete existing pending distributions for this project, then insert
         await supabase.from('profit_distributions')
             .delete().eq('project_id', projectId).eq('status', 'Pending');
 
@@ -919,6 +1109,7 @@ app.get('/api/projects/:id/effort-ratings', protect, async (req, res) => {
     }
 });
 
+// Admin sets deal sourcer — partner_id is user_id here
 app.post('/api/projects/:id/deal-source', protect, authorize('Administrator'), async (req, res) => {
     try {
         const { partner_id, share_pct, notes } = req.body;
