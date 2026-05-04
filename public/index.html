@@ -213,7 +213,7 @@
                 <li><a href="#projects">Projects</a></li>
                 <li><a href="#partners">Partners</a></li>
                 <li><a href="#contact">Contact</a></li>
-                <li><a href="chambers.html" class="btn btn-primary">Insight Chambers</a></li>
+                <li><button class="btn btn-primary" onclick="openLoginModal()">Insight Chambers</button></li>
             </ul>
             <button class="nav-toggle" onclick="toggleMobileNav()" aria-label="Menu">☰</button>
             <ul class="nav-links nav-mobile" id="mobileNav">
@@ -221,7 +221,7 @@
                 <li><a href="#projects" onclick="closeMobileNav()">Projects</a></li>
                 <li><a href="#partners" onclick="closeMobileNav()">Partners</a></li>
                 <li><a href="#contact" onclick="closeMobileNav()">Contact</a></li>
-                <li><a href="chambers.html" class="btn btn-primary" onclick="closeMobileNav()">Insight Chambers</a></li>
+                <li><button class="btn btn-primary" onclick="closeMobileNav(); openLoginModal()">Insight Chambers</button></li>
             </ul>
         </nav>
     </div>
